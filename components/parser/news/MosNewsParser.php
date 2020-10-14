@@ -47,11 +47,11 @@ class MosNewsParser implements ParserInterface
     {
         $parser = new self(200000, 10);
 
-        return $parser->parse(10, 30);
+        return $parser->parse(10, 50);
     }
 
 
-    public function parse(int $minNewsCount = 10, int $maxNewsCount = 30): array
+    public function parse(int $minNewsCount = 10, int $maxNewsCount = 100): array
     {
         $previewList = $this->getPreviewList($minNewsCount, $maxNewsCount);
 
@@ -71,13 +71,13 @@ class MosNewsParser implements ParserInterface
         return $newsList;
     }
 
-    private function getPreviewList(int $minNewsCount = 10, int $maxNewsCount = 30): array
+    private function getPreviewList(int $minNewsCount = 10, int $maxNewsCount = 100): array
     {
         $previewList = [];
-
+        $pageNumber = 1;
         while (count($previewList) < $maxNewsCount) {
-            $uriPreviewPage = UriResolver::resolve("/news", $this->getSiteUri());
-
+            $uriPreviewPage = UriResolver::resolve("/?PAGEN_1={$pageNumber}", $this->getSiteUri());
+            $pageNumber++;
             try {
                 $previewNewsContent = $this->getPageContent($uriPreviewPage);
                 $previewNewsCrawler = new Crawler($previewNewsContent);
@@ -88,15 +88,16 @@ class MosNewsParser implements ParserInterface
                 break;
             }
 
-            $itemXPath = '//div[contains(@class, "news-list")]//div[contains(@class, "news-item")]';
-            $previewNewsCrawler = $previewNewsCrawler->filterXPath($itemXPath);
-
-            $previewNewsCrawler->each(function (Crawler $newsPreview) use (&$previewList, $uriPreviewPage) {
-                $titleCrawler = $newsPreview->filterXPath('//div[contains(@class, "news-name")]/a');
-                $uri = UriResolver::resolve($titleCrawler->attr('href'), $uriPreviewPage);
-
-                $previewList[] = new PreviewNewsDTO($uri, null, $titleCrawler->text(), null);
-            });
+            $itemsXPath = '//div[@id="comp_"]';
+            $previewNewsCrawler = $previewNewsCrawler->filterXPath($itemsXPath);
+            $previewNewsCrawler->each(
+                function (Crawler $newsPreview) use (&$previewList, $uriPreviewPage) {
+                    $titleCrawler = $newsPreview->filterXPath('//div[contains(@class, "news-name")]/a');
+                    $uri = UriResolver::resolve($titleCrawler->attr('href'), $uriPreviewPage);
+                    $preview = $newsPreview->filterXPath('//div[contains(@class,"news-text")]')->text();
+                    $previewList[] = new PreviewNewsDTO($uri, null, $titleCrawler->text(), $preview);
+                }
+            );
         }
         $previewList = array_slice($previewList, 0, $maxNewsCount);
         return $previewList;
@@ -107,26 +108,20 @@ class MosNewsParser implements ParserInterface
     {
         $uri = $previewNewsItem->getUri();
         $title = $previewNewsItem->getTitle();
+        $description = $previewNewsItem->getPreview();
         $image = null;
 
         $newsPage = $this->getPageContent($uri);
 
         $newsPageCrawler = new Crawler($newsPage);
-        $newsPostCrawler = $newsPageCrawler->filterXPath('//article[@class="article"]');
+        $newsPostCrawler = $newsPageCrawler->filterXPath('//article[contains(@class,"article")]');
 
-
-        $mainImageCrawler = $newsPageCrawler->filterXPath('//meta[@property="og:image"]')->first();
-        if ($this->crawlerHasNodes($mainImageCrawler)) {
-            $image = $mainImageCrawler->attr('content');
+        try {
+            $publishedAtString = $newsPostCrawler->filterXPath('//div[contains(@class, "article-date")]')->text();
+        } catch (\Exception $e) {
+            dd($e, $uri,$title,$description);
         }
-        if ($image !== null) {
-            $image = UriResolver::resolve($image, $uri);
-            $image = Helper::encodeUrl($image);
-        }
-        $image = str_replace('http','https',$image);
 
-        $description = $newsPostCrawler->filterXPath('//div[contains(@class, "detail_text_container")]')->text();
-        $publishedAtString = $newsPostCrawler->filterXPath('//div[contains(@class, "article-date")]')->text();
         $publishedAtString = explode(' ', $publishedAtString);
         $publishedAtString = $publishedAtString[0].' '.$publishedAtString[1];
         $timezone = new DateTimeZone('Europe/Moscow');
@@ -134,11 +129,12 @@ class MosNewsParser implements ParserInterface
         $publishedAtUTC = $publishedAt->setTimezone(new DateTimeZone('UTC'));
         $newsPost = new NewsPost(self::class, $title, $description, $publishedAtUTC->format('Y-m-d H:i:s'), $uri, $image);
 
-        $contentCrawler = $newsPostCrawler->filterXPath('//div[contains(@class,"page-body")]');
+        $contentCrawler = $newsPostCrawler;
 
         $this->removeDomNodes($newsPageCrawler, '//a[starts-with(@href, "javascript")]');
-        $this->removeDomNodes($newsPageCrawler, '//script | //video');
+        $this->removeDomNodes($newsPageCrawler, '//div[contains(@class, "article-bottom")]');
         $this->removeDomNodes($contentCrawler, '//table');
+        $this->removeDomNodes($newsPageCrawler, '//script | //video');
 
         foreach ($contentCrawler as $item) {
             $nodeIterator = new DOMNodeRecursiveIterator($item->childNodes);
@@ -209,9 +205,12 @@ class MosNewsParser implements ParserInterface
     private function searchQuoteNewsItem(DOMNode $node): ?NewsPostItem
     {
         if ($node->nodeName === '#text') {
-            $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
-                return $this->isQuoteType($parentNode);
-            });
+            $parentNode = $this->getRecursivelyParentNode(
+                $node,
+                function (DOMNode $parentNode) {
+                    return $this->isQuoteType($parentNode);
+                }
+            );
             $node = $parentNode ?: $node;
         }
 
@@ -234,9 +233,12 @@ class MosNewsParser implements ParserInterface
     private function searchHeadingNewsItem(DOMNode $node): ?NewsPostItem
     {
         if ($node->nodeName === '#text') {
-            $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
-                return $this->getHeadingLevel($parentNode);
-            });
+            $parentNode = $this->getRecursivelyParentNode(
+                $node,
+                function (DOMNode $parentNode) {
+                    return $this->getHeadingLevel($parentNode);
+                }
+            );
             $node = $parentNode ?: $node;
         }
 
@@ -260,9 +262,12 @@ class MosNewsParser implements ParserInterface
     private function searchLinkNewsItem(DOMNode $node, PreviewNewsDTO $previewNewsItem): ?NewsPostItem
     {
         if ($node->nodeName === '#text') {
-            $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
-                return $this->isLink($parentNode);
-            });
+            $parentNode = $this->getRecursivelyParentNode(
+                $node,
+                function (DOMNode $parentNode) {
+                    return $this->isLink($parentNode);
+                }
+            );
             $node = $parentNode ?: $node;
         }
 
@@ -294,9 +299,13 @@ class MosNewsParser implements ParserInterface
     private function searchYoutubeVideoNewsItem(DOMNode $node): ?NewsPostItem
     {
         if ($node->nodeName === '#text') {
-            $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
-                return $parentNode->nodeName === 'iframe';
-            }, 3);
+            $parentNode = $this->getRecursivelyParentNode(
+                $node,
+                function (DOMNode $parentNode) {
+                    return $parentNode->nodeName === 'iframe';
+                },
+                3
+            );
             $node = $parentNode ?: $node;
         }
 
@@ -363,9 +372,13 @@ class MosNewsParser implements ParserInterface
 
         $attachNode = $node;
         if ($node->nodeName === '#text') {
-            $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) use ($ignoringTags) {
-                return isset($ignoringTags[$parentNode->nodeName]);
-            }, 3);
+            $parentNode = $this->getRecursivelyParentNode(
+                $node,
+                function (DOMNode $parentNode) use ($ignoringTags) {
+                    return isset($ignoringTags[$parentNode->nodeName]);
+                },
+                3
+            );
 
             if ($parentNode) {
                 $attachNode = $parentNode;
@@ -541,12 +554,14 @@ class MosNewsParser implements ParserInterface
 
     private function removeDomNodes(Crawler $crawler, string $xpath): void
     {
-        $crawler->filterXPath($xpath)->each(function (Crawler $crawler) {
-            $domNode = $crawler->getNode(0);
-            if ($domNode) {
-                $domNode->parentNode->removeChild($domNode);
+        $crawler->filterXPath($xpath)->each(
+            function (Crawler $crawler) {
+                $domNode = $crawler->getNode(0);
+                if ($domNode) {
+                    $domNode->parentNode->removeChild($domNode);
+                }
             }
-        });
+        );
     }
 
     private function crawlerHasNodes(Crawler $crawler): bool
@@ -559,18 +574,18 @@ class MosNewsParser implements ParserInterface
         $date = mb_strtolower($date);
 
         $ruMonth = [
-            'января',
-            'февраля',
-            'марта',
-            'апреля',
-            'мая',
-            'июня',
-            'июля',
-            'августа',
-            'сентября',
-            'октября',
-            'ноября',
-            'декабря'
+            'январь',
+            'февраль',
+            'март',
+            'апрель',
+            'май',
+            'июнь',
+            'июль',
+            'август',
+            'сентябрь',
+            'октябрь',
+            'ноябрь',
+            'декабрь'
         ];
         $ruMonthShort = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
         $enMonth = [
