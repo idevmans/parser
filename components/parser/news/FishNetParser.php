@@ -117,12 +117,24 @@ class FishNetParser implements ParserInterface
 
         $newsPageCrawler = new Crawler($newsPage);
         $newsPostCrawler = $newsPageCrawler->filterXPath('//div[contains(@class,"boxed")]//div[contains(@class,"body")]');
+        $mainImageCrawler = $newsPostCrawler->filterXPath('//img[1]');
+        if ($this->crawlerHasNodes($mainImageCrawler)) {
+            $image = $mainImageCrawler->attr('src');
+            $this->removeDomNodes($newsPostCrawler, '//div[contains(@class,"boxed")]//div[contains(@class,"body")]//img[1]');
+        }
+
+        if ($image !== null) {
+            $image = UriResolver::resolve($image,$uri);
+            $image = Helper::encodeUrl($image);
+        }
 
 
-        $newsPost = new NewsPost(self::class, $title, $description, $publishedAt->format('Y-m-d H:i:s'), $uri, $image);
+        $newsPost = new NewsPost(self::class, $title, html_entity_decode($description), $publishedAt->format('Y-m-d H:i:s'), $uri, $image);
 
         $contentCrawler = $newsPostCrawler;
 
+        $this->removeDomNodes($contentCrawler, '//a[starts-with(@href, "javascript")]');
+        $this->removeDomNodes($contentCrawler, '//p[1]');
         $this->removeDomNodes($contentCrawler, '//a[starts-with(@href, "javascript")]');
         $this->removeDomNodes($contentCrawler, '//script | //video');
         $this->removeDomNodes($contentCrawler, '//table');
