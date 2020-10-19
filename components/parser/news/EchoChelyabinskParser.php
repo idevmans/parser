@@ -96,7 +96,7 @@ class EchoChelyabinskParser implements ParserInterface
             $publishedAt = DateTimeImmutable::createFromFormat('D, d M Y H:i:s O', $publishedAtString);
             $publishedAtUTC = $publishedAt->setTimezone(new DateTimeZone('UTC'));
 
-            $preview = $newsPreview->filterXPath('//description')->text();
+            $preview = null;
 
             $previewList[] = new PreviewNewsDTO($uri, $publishedAtUTC, $title, $preview);
         });
@@ -117,14 +117,28 @@ class EchoChelyabinskParser implements ParserInterface
         $newsPage = $this->getPageContent($uri);
 
         $newsPageCrawler = new Crawler($newsPage);
-        $newsPostCrawler = $newsPageCrawler->filterXPath('//div[@class="hockey__date"]/parent::div[1]');
+        $newsPostCrawler = $newsPageCrawler->filterXPath('//div[contains(@class,"echoSport__container")]//div[contains(@class,"col-lg-9")][1]');
+        $mainImageCrawler = $newsPageCrawler->filterXPath('//meta[@property="og:image"]')->first();
+        if ($this->crawlerHasNodes($mainImageCrawler)) {
+            $image = $mainImageCrawler->attr('content');
+        }
 
+        if ($image !== null) {
+            $image = UriResolver::resolve($image, $uri);
+            $image = Helper::encodeUrl($image);
+        }
 
+        $contentCrawler = $newsPostCrawler->filterXPath('//div[@class="hockey__news"]');
+        $description = $newsPostCrawler->filterXPath('//div[@class="hockey__news"]//p[1]')->text();
         $newsPost = new NewsPost(self::class, $title, $description, $publishedAt->format('Y-m-d H:i:s'), $uri, $image);
-        $contentCrawler = $newsPostCrawler;
 
         $this->removeDomNodes($contentCrawler, '//a[starts-with(@href, "javascript")]');
         $this->removeDomNodes($contentCrawler, '//script | //video');
+        $this->removeDomNodes($contentCrawler, '//div[@class="hockey__news"]//p[1]');
+        $this->removeDomNodes($contentCrawler, '//div[contains(@class,"d-none d-lg-block col-lg-3")]//following-sibling::*');
+        $this->removeDomNodes($contentCrawler, '//div[@class="wp-block-image"][1]');
+        $this->removeDomNodes($contentCrawler, '//h2[@class="hockey__header"][1]');
+        $this->removeDomNodes($contentCrawler, '//div[@class="hockey__date"][1]');
         $this->removeDomNodes($contentCrawler, '//table');
         $this->removeDomNodes($contentCrawler, '//p[last()]');
 
