@@ -11,10 +11,11 @@
     "cagartner/phpquery": "^0.9.12",
     "lanfix/parser": "*",
     "symfony/dom-crawler": "^5.1",
-    "rowbot/punycode": "^1.0",
     "ext-dom": "*",
-    "symfony/css-selector": "^5.1"
-
+    "league/uri": "^6.3",
+    "rowbot/punycode": "^1.0",
+    "symfony/css-selector": "^5.1",
+    "ext-zlib": "*"
   },
   "config": {
     "process-timeout": 1800,

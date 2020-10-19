@@ -4,6 +4,8 @@ namespace app\components;
 
 use app\components\parser\NewsPost;
 use app\components\parser\NewsPostItem;
+use InvalidArgumentException;
+use League\Uri\Uri;
 use linslin\yii2\curl\Curl;
 
 class Helper
@@ -42,10 +44,16 @@ class Helper
      */
     public static function encodeUrl(string $url): string
     {
-        $url = urlencode(utf8_encode($url));
-        $url = str_replace(['%3A', '%2F', '%3F'], [':', '/', '?'], $url);
+        $uriParts = parse_url($url);
+        if ($uriParts === false) {
+            throw new InvalidArgumentException('Невалидный или сильно искаженный URL: ' . $url);
+        }
 
-        return $url;
+        if (!empty($uriParts['path'])) {
+            $uriParts['path'] = implode('/', array_map('rawurlencode', explode('/', $uriParts['path'])));
+        }
+
+        return (string) Uri::createFromComponents($uriParts);
     }
 
     /**
@@ -91,4 +99,3 @@ class Helper
     }
 
 }
-

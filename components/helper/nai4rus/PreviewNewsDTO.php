@@ -3,24 +3,32 @@
 namespace app\components\helper\nai4rus;
 
 use DateTimeInterface;
+use InvalidArgumentException;
 
 class PreviewNewsDTO
 {
     private string $uri;
-    private ?DateTimeInterface $dateTime;
+    private ?DateTimeInterface $publishedAt;
     private ?string $title;
-    private ?string $preview;
+    private ?string $description;
+    private ?string $image;
 
     public function __construct(
         string $uri,
-        ?DateTimeInterface $dateTime = null,
+        ?DateTimeInterface $publishedAt = null,
         ?string $title = null,
-        ?string $preview = null
+        ?string $description = null,
+        ?string $image = null
     ) {
+        if ($uri === '' || !filter_var($uri, FILTER_VALIDATE_URL)) {
+            throw new InvalidArgumentException('Невалидный аргумент $uri: ' . $uri);
+        }
+
         $this->uri = $uri;
-        $this->dateTime = $dateTime;
+        $this->publishedAt = $publishedAt;
         $this->title = $title;
-        $this->preview = $preview;
+        $this->description = $description;
+        $this->image = $image;
     }
 
     public function getUri(): string
@@ -28,9 +36,19 @@ class PreviewNewsDTO
         return $this->uri;
     }
 
+    public function getPublishedAt(): ?DateTimeInterface
+    {
+        return $this->publishedAt;
+    }
+
     public function getDateTime(): ?DateTimeInterface
     {
-        return $this->dateTime;
+        return $this->getPublishedAt();
+    }
+
+    public function setPublishedAt(?DateTimeInterface $publishedAt): void
+    {
+        $this->publishedAt = $publishedAt;
     }
 
     public function getTitle(): ?string
@@ -38,8 +56,33 @@ class PreviewNewsDTO
         return $this->title;
     }
 
+    public function setTitle(?string $title): void
+    {
+        $this->title = $title;
+    }
+
     public function getPreview(): ?string
     {
-        return $this->preview;
+        return $this->getDescription();
+    }
+
+    public function getDescription(): ?string
+    {
+        return $this->description;
+    }
+
+    public function setDescription(?string $description): void
+    {
+        $this->description = $description;
+    }
+
+    public function getImage(): ?string
+    {
+        return $this->image;
+    }
+
+    public function setImage(?string $image): void
+    {
+        $this->image = $image;
     }
 }
