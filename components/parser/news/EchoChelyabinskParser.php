@@ -118,9 +118,10 @@ class EchoChelyabinskParser implements ParserInterface
 
         $newsPageCrawler = new Crawler($newsPage);
         $newsPostCrawler = $newsPageCrawler->filterXPath('//div[contains(@class,"echoSport__container")]//div[contains(@class,"col-lg-9")][1]');
-        $mainImageCrawler = $newsPageCrawler->filterXPath('//meta[@property="og:image"]')->first();
+        $mainImageCrawler = $newsPostCrawler->filterXPath('//img[1]');
         if ($this->crawlerHasNodes($mainImageCrawler)) {
-            $image = $mainImageCrawler->attr('content');
+            $image = $mainImageCrawler->attr('src');
+            $this->removeDomNodes($newsPostCrawler,'//img[1]');
         }
 
         if ($image !== null) {
