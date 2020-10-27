@@ -22,6 +22,7 @@ abstract class AbstractBaseParser implements ParserInterface
     private int $microsecondsDelay;
     private int $pageCountBetweenDelay;
     private SplObjectStorage $nodeStorage;
+    private SplObjectStorage $rootContentNodeStorage;
     private Curl $curl;
 
     public function __construct(int $microsecondsDelay = 200000, int $pageCountBetweenDelay = 10)
@@ -29,7 +30,7 @@ abstract class AbstractBaseParser implements ParserInterface
         $this->microsecondsDelay = $microsecondsDelay;
         $this->pageCountBetweenDelay = $pageCountBetweenDelay;
         $this->nodeStorage = new SplObjectStorage();
-
+        $this->rootContentNodeStorage = new SplObjectStorage();
         $this->curl = $this->factoryCurl();
     }
 
@@ -60,6 +61,7 @@ abstract class AbstractBaseParser implements ParserInterface
         return $newsList;
     }
 
+
     /**
      * @return string
      */
@@ -89,6 +91,7 @@ abstract class AbstractBaseParser implements ParserInterface
     protected function parseNewsPostContent(Crawler $contentCrawler, PreviewNewsDTO $newsPostDTO): array
     {
         $newsPostItemDTOList = [];
+        $this->setRootNodes($contentCrawler);
 
         foreach ($contentCrawler as $item) {
             $nodeIterator = new DOMNodeRecursiveIterator($item->childNodes);
@@ -112,7 +115,11 @@ abstract class AbstractBaseParser implements ParserInterface
      * @param int $descLength
      * @return NewsPost
      */
-    protected function factoryNewsPost(PreviewNewsDTO $newsPostDTO, array $newsPostItems, int $descLength = 200): NewsPost {
+    protected function factoryNewsPost(
+        PreviewNewsDTO $newsPostDTO,
+        array $newsPostItems,
+        int $descLength = 200
+    ): NewsPost {
         $uri = $newsPostDTO->getUri();
         $image = $newsPostDTO->getImage();
 
@@ -253,7 +260,13 @@ abstract class AbstractBaseParser implements ParserInterface
     {
         if ($node->nodeName === '#text' || !$this->isQuoteType($node)) {
             $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
-                return $this->isQuoteType($parentNode);
+                $isQuote = $this->isQuoteType($parentNode);
+
+                if ($this->rootContentNodeStorage->contains($parentNode) && !$isQuote) {
+                    return null;
+                }
+
+                return $isQuote;
             });
             $node = $parentNode ?: $node;
         }
@@ -278,7 +291,13 @@ abstract class AbstractBaseParser implements ParserInterface
     {
         if ($node->nodeName === '#text' || $this->getHeadingLevel($node) === null) {
             $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
-                return $this->getHeadingLevel($parentNode);
+                $isHeading = $this->getHeadingLevel($parentNode) !== null;
+
+                if ($this->rootContentNodeStorage->contains($parentNode) && !$isHeading) {
+                    return null;
+                }
+
+                return $isHeading;
             });
             $node = $parentNode ?: $node;
         }
@@ -309,7 +328,13 @@ abstract class AbstractBaseParser implements ParserInterface
 
         if ($node->nodeName === '#text' || !$this->isLink($node)) {
             $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
-                return $this->isLink($parentNode);
+                $isLink = $this->isLink($parentNode);
+
+                if ($this->rootContentNodeStorage->contains($parentNode) && !$isLink) {
+                    return null;
+                }
+
+                return $isLink;
             });
             $node = $parentNode ?: $node;
         }
@@ -346,7 +371,13 @@ abstract class AbstractBaseParser implements ParserInterface
     {
         if ($node->nodeName === '#text' || $node->nodeName !== 'iframe') {
             $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
-                return $parentNode->nodeName === 'iframe';
+                $isIframe = $parentNode->nodeName === 'iframe';
+
+                if ($this->rootContentNodeStorage->contains($parentNode) && !$isIframe) {
+                    return null;
+                }
+
+                return $isIframe;
             }, 3);
             $node = $parentNode ?: $node;
         }
@@ -423,10 +454,17 @@ abstract class AbstractBaseParser implements ParserInterface
         $attachNode = $node;
         if ($node->nodeName === '#text') {
             $parentNode = $this->getRecursivelyParentNode($node, function (DOMNode $parentNode) {
+                $isFormattingTag = $this->isFormattingTag($parentNode);
+
+                if ($this->rootContentNodeStorage->contains($parentNode) && !$isFormattingTag) {
+                    return null;
+                }
+
                 if ($parentNode->parentNode && $this->isFormattingTag($parentNode->parentNode)) {
                     return false;
                 }
-                return $this->isFormattingTag($parentNode);
+
+                return $isFormattingTag;
             }, 6);
 
             $attachNode = $parentNode ?: $node->parentNode;
@@ -488,11 +526,13 @@ abstract class AbstractBaseParser implements ParserInterface
 
     protected function getRecursivelyParentNode(DOMNode $node, callable $callback, int $maxLevel = 5): ?DOMNode
     {
-        if ($callback($node)) {
+        $result = $callback($node);
+
+        if ($result === true) {
             return $node;
         }
 
-        if ($maxLevel <= 0 || !$node->parentNode) {
+        if ($maxLevel <= 0 || !$node->parentNode || $result === null) {
             return null;
         }
 
@@ -619,6 +659,14 @@ abstract class AbstractBaseParser implements ParserInterface
         return $headingTags[$node->nodeName] ?? null;
     }
 
+    protected function setRootNodes(Crawler $contentCrawler): void
+    {
+        $this->rootContentNodeStorage->removeAll($this->rootContentNodeStorage);
+        foreach ($contentCrawler as $rootNode) {
+            $this->rootContentNodeStorage->attach($rootNode);
+        }
+    }
+
     protected function removeDomNodes(Crawler $crawler, string $xpath): void
     {
         $crawler->filterXPath($xpath)->each(function (Crawler $crawler) {
@@ -695,4 +743,10 @@ abstract class AbstractBaseParser implements ParserInterface
     {
         return $this->pageCountBetweenDelay;
     }
+
+    protected function getRootContentNodeStorage(): SplObjectStorage
+    {
+        return $this->rootContentNodeStorage;
+    }
+
 }
