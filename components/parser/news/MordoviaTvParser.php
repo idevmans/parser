@@ -68,10 +68,15 @@ class MordoviaTvParser extends AbstractBaseParser
         $newsPageCrawler = new Crawler($newsPage);
         $newsPostCrawler = $newsPageCrawler->filterXPath('//article[@class="content-article"]');
 
-        $mainImageCrawler = $newsPostCrawler->filterXPath('//img')->first();
+        $mainImageCrawler = $newsPostCrawler->filterXPath('//span[@itemprop="description"]//img')->first();
         if ($this->crawlerHasNodes($mainImageCrawler)) {
-            $image = $mainImageCrawler->attr('src');
-            $this->removeDomNodes($newsPostCrawler,'//img[1]');
+            $blackImg = 'https://mordoviatv.ru/wp-content/plugins/wp-spamfree/img/wpsf-img.php';
+            if ($mainImageCrawler->attr('src') === $blackImg) {
+                $image = null;
+            } else {
+                $image = $mainImageCrawler->attr('src');
+            }
+            $this->removeDomNodes($newsPostCrawler,'//span[@itemprop="description"]//img[1]');
         }
         if ($image !== null && $image !== '') {
             $image = UriResolver::resolve($image, $uri);
@@ -82,8 +87,6 @@ class MordoviaTvParser extends AbstractBaseParser
 
         $contentCrawler = $newsPostCrawler->filterXPath('//span[@itemprop="description"]');
 
-        $this->removeDomNodes($contentCrawler, '//script | //video');
-        $this->removeDomNodes($contentCrawler, '//table');
 
         $this->purifyNewsPostContent($contentCrawler);
 
