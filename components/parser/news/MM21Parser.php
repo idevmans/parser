@@ -116,15 +116,16 @@ class MM21Parser extends AbstractBaseParser
             $previewNewsDTO->setImage($this->encodeUri($image));
         }
 
-        $previewNewsDTO->setDescription(null);
+        $previewNewsDTO->setDescription($newsPageCrawler->filterXPath('//div[@class="article-epilog"]')->text());
+
         $contentCrawler = $newsPostCrawler->filterXPath('//div[@class="detail-text-div"]');
+
         $this->removeDomNodes($contentCrawler, '//div[contains(@class,"mobile-slider")]');
+        $this->removeDomNodes($contentCrawler, '//b[last()]');
         $this->removeDomNodes($contentCrawler, '//div[contains(@class,"google-auto-placed ap_container")]');
         $this->removeDomNodes($contentCrawler, '//div[contains(@class,"ya-share2")]');
         $this->removeDomNodes($contentCrawler, '//div[contains(@class,"content-block")]');
         $this->removeDomNodes($contentCrawler, '//div[@class="articles-links-add"]');
-        $this->removeDomNodes($contentCrawler, '//p[1]');
-
         $this->removeDomNodes($contentCrawler, '//span[@itemprop="name"]');
         $this->removeDomNodes($newsPageCrawler, '//p[contains(@class,"element-invisible no-mobile")]');
 
