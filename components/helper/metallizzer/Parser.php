@@ -11,9 +11,9 @@ class Parser
 
     protected $selectors = [
         'header' => ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+        'link'   => ['a'],
         'image'  => ['img'],
         'quote'  => ['blockquote'],
-        'link'   => ['a'],
         'video'  => ['iframe'],
     ];
 
@@ -92,6 +92,12 @@ class Parser
     public function parse(Crawler $node, int $i)
     {
         if (count($this->ignore)) {
+            foreach ($this->ignore as $selector) {
+                if ($node->matches($selector)) {
+                    return [];
+                }
+            }
+
             $node->filterXPath('//'.implode('|//', $this->ignore))->each(function (Crawler $crawler) {
                 $domNode = $crawler->getNode(0);
 
@@ -155,15 +161,24 @@ class Parser
     protected function filterItems(array $items)
     {
         return array_filter($items, function ($item) {
-            if (empty($item)) {
+            if (empty($item['type'])) {
                 return false;
             }
 
-            if (NewsPostItem::TYPE_TEXT != $item['type']) {
-                return true;
+            switch ($item['type']) {
+                case NewsPostItem::TYPE_HEADER:
+                case NewsPostItem::TYPE_TEXT:
+                case NewsPostItem::TYPE_QUOTE:
+                    return strlen(Text::trim($item['text'])) > 0;
+
+                case NewsPostItem::TYPE_IMAGE:
+                    return !empty($item['image']);
+
+                case NewsPostItem::TYPE_VIDEO:
+                    return !empty($item['youtubeId']);
             }
 
-            return strlen(Text::trim($item['text'])) > 0;
+            return false;
         });
     }
 
@@ -197,7 +212,13 @@ class Parser
                 && NewsPostItem::TYPE_TEXT == $item['type']
                 && $item['type'] == $lastItem['type']
             ) {
-                $items[$lastKey]['text'] .= $item['text'];
+                $space = '';
+
+                if (!preg_match('/^[[:punct:]]/', $item['text'])) {
+                    $space = ' ';
+                }
+
+                $items[$lastKey]['text'] .= $space.$item['text'];
 
                 unset($items[$key]);
 
@@ -316,11 +337,6 @@ class Parser
             return false;
         }
 
-        // Если внутри ссылки содержится изображение, возвращаем его
-        if ($this->isNodeContains($node, 'image')) {
-            return $this->parseImage($node, $i);
-        }
-
         $type  = NewsPostItem::TYPE_LINK;
         $link  = $node->filter($this->glued['link'])->first();
         $image = null;
@@ -332,6 +348,15 @@ class Parser
             list($image, $url) = [$url, $image];
 
             $type = NewsPostItem::TYPE_IMAGE;
+        } elseif ($this->isNodeContains($node, 'image')) {
+            // Если внутри ссылки содержится изображение, возвращаем его
+
+            return $this->parseImage($node, $i);
+        }
+
+        if (!preg_match('/^(?:(?:(?<proto>https?|ftp):)?\/)?\//i', $link->attr('href'))) {
+            return $this->textNode($text ?: $link->attr('href'));
+
         }
 
         return [
