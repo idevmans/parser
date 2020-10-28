@@ -16,7 +16,8 @@
     "rowbot/punycode": "^1.0",
     "symfony/css-selector": "^5.1",
     "ext-zlib": "*",
-    "ext-json": "*"
+    "ext-json": "*",
+    "fingli/parser-core": "dev-main"
   },
   "config": {
     "process-timeout": 1800,

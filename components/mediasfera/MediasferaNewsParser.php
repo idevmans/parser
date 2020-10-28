@@ -28,6 +28,9 @@ class MediasferaNewsParser
 {
     public const DEBUG = false;
 
+    const PAGE_TRY_COUNT = 2;
+    const PAGE_TRY_INTERVAL = [0.5, 1]; //Random interval in seconds
+
     /**
      * @see https://www.php.net/manual/ru/datetimezone.construct.php
      *
@@ -584,6 +587,10 @@ class MediasferaNewsParser
 
             $parts = parse_url($url);
 
+            if(!$parts) {
+                return '';
+            }
+
             if(isset($parts['host'])) {
                 if(strpos($parts['host'], '%') !== false) {
                     $parts['host'] = urldecode($parts['host']);
@@ -619,8 +626,12 @@ class MediasferaNewsParser
     }
 
 
-    public static function getPage($url)
+    public static function getPage(string $url, ?int $try_count = null) : ?string
     {
+        if($try_count === null) {
+            $try_count = static::PAGE_TRY_COUNT;
+        }
+
         $curl = Helper::getCurl();
 
         $curl->setOptions(static::CURL_OPTIONS);
@@ -630,7 +641,13 @@ class MediasferaNewsParser
         $code = $curl->responseCode ?? null;
 
         if (empty($content) || $code < 200 || $code >= 400) {
-            throw new \Exception('Can\'t open url ' . $curl->getUrl());
+            if($try_count > 0) {
+                usleep(rand(static::PAGE_TRY_INTERVAL[0] * 1000000, static::PAGE_TRY_INTERVAL[1] * 1000000));
+                return static::getPage($url, ($try_count - 1));
+            }
+            else {
+                throw new \Exception('Can\'t open url ' . $curl->getUrl());
+            }
         }
 
         return $content;

@@ -236,11 +236,20 @@ class NewsPostWrapper
         }
 
         $link = $this->prepareString($value[1]);
-        $text = $this->prepareString($value[0]) ?? $link;
+        $text = $this->prepareString($value[0]);
 
         if(!$link) {
+            if($text) {
+                $this->items[] = new NewsPostItem(
+                    NewsPostItem::TYPE_TEXT,
+                    $text
+                );
+            }
+
             return;
         }
+
+        $text = $text ?? $link;
 
         $this->items[] = new NewsPostItem(
             NewsPostItem::TYPE_LINK,
