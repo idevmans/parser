@@ -4,6 +4,7 @@ namespace app\components\helper\metallizzer;
 
 use Exception;
 use League\Uri\Uri;
+use League\Uri\UriString;
 
 class Url
 {
@@ -13,7 +14,7 @@ class Url
             return '';
         }
 
-        if (false === $parts = parse_url($url)) {
+        if (false === $parts = self::parse($url)) {
             return null;
         }
 
@@ -40,6 +41,15 @@ class Url
             return (string) Uri::createFromComponents($parts);
         } catch (Exception $e) {
             return null;
+        }
+    }
+
+    public static function parse(string $url)
+    {
+        try {
+            return UriString::parse($url);
+        } catch (Exception $e) {
+            return false;
         }
     }
 }
