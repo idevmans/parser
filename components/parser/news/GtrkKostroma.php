@@ -50,12 +50,21 @@ class GtrkKostroma extends AbstractBaseParser
                 $uriCrawler = $newsPreview->filterXPath('//a[1]')->attr('href');
                 $uri = UriResolver::resolve($uriCrawler, $this->getSiteUrl());
 
-                $description = null;
-                $previewNewsDTOList[] = new PreviewNewsDTO($this->encodeUri($uri), null, $title, $description);
+                $publishedAtString = $newsPreview->filterXPath('//span[@class="news__date"]')->text();
+                $publishedAtString = explode(' ', $publishedAtString);
+                dd($publishedAtString);
+                $publishedAtString[1] = $this->convertStringMonthToNumber($publishedAtString[1]);
+                $publishedAtString = $publishedAtString[0].' '.$publishedAtString[1].' '.$publishedAtString[2].' '.$publishedAtString[3];
+                $timezone = new DateTimeZone('Europe/Moscow');
+                $publishedAt = DateTimeImmutable::createFromFormat('d m Y, H:i', $publishedAtString, $timezone);
+                $publishedAtUTC = $publishedAt->setTimezone(new DateTimeZone('UTC'));
+
+                $previewNewsDTOList[] = new PreviewNewsDTO($this->encodeUri($uri), $publishedAtUTC, $title, null);
             });
         }
 
         $previewNewsDTOList = array_slice($previewNewsDTOList, 0, $maxNewsCount);
+        dd($previewNewsDTOList);
         return $previewNewsDTOList;
     }
 
