@@ -18,7 +18,7 @@ use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\DomCrawler\UriResolver;
 
 /**
- * @version 1.1.1
+ * @version 1.1.6
  *
  * @property NewsPostWrapper $post
  *
@@ -26,7 +26,10 @@ use Symfony\Component\DomCrawler\UriResolver;
 
 class MediasferaNewsParser
 {
-    private const DEBUG = false;
+    public const DEBUG = false;
+
+    const PAGE_TRY_COUNT = 2;
+    const PAGE_TRY_INTERVAL = [0.5, 1]; //Random interval in seconds
 
     /**
      * @see https://www.php.net/manual/ru/datetimezone.construct.php
@@ -40,18 +43,23 @@ class MediasferaNewsParser
      * */
     public const DATEFORMAT = 'D, d M Y H:i:s O';
 
+    public const IS_CURRENT_TIME = false;
+
+    public const ATTR_IMAGE = 'src';
+    public const ATTR_VIDEO_IFRAME = 'src';
+
     public const CHECK_CHARS =       " \t\n\r\0\x0B\xA0";
     public const CHECK_EMPTY_CHARS = " \t\n\r\0\x0B\xC2\xA0";
 
+    public const CURL_OPTIONS = [
+        CURLOPT_HEADER => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+    ];
 
     // Skip elements. If element value is true, stop parsing article
     public const ARTICLE_BREAKPOINTS = [
         'name' => [
-            'br' => false,
-            'hr' => false,
-            'style' => false,
-            'script' => false,
-            'noscript' => false,
             'table' => false,
         ],
 //        'text' => [],
@@ -68,14 +76,6 @@ class MediasferaNewsParser
      */
 
 
-    public static function isDebug() : bool
-    {
-        $class = static::class;
-
-        return (defined("$class::DEBUG")) ? static::class : self::DEBUG;
-    }
-
-
     public static function getBreakpoints() : array
     {
         if(!static::$breakpoints) {
@@ -88,6 +88,13 @@ class MediasferaNewsParser
 
     protected static function parse(Crawler $node, ?string $filter = null) : void
     {
+        static $notice = true;
+
+        if(static::DEBUG && $notice) {
+            $notice = false;
+            echo '<div style="background-color: red; color: white;text-align: center">=== !!!DEBUG MODE!!! ===</div>';
+        }
+
         $node = static::filterNode($node, $filter);
         $node = static::clearNode($node);
 
@@ -189,13 +196,25 @@ class MediasferaNewsParser
 
         switch ($nodeName)
         {
+            case 'br' :
+            case 'hr' :
+            case 'meta' :
+            case 'link' :
+                break;
+
             case 'html' :
             case 'body' :
             case 'center' :
-                $nodes = $node->children();
-                if ($nodes->count()) {
-                    static::parseSection($node);
-                }
+            case 'menu' :
+            case 'header' :
+            case 'article' :
+            case 'div' :
+            case 'figcaption' :
+            case 'p' :
+            case 'b' :
+            case 'span' :
+            case 'strong' :
+                static::parseSection($node);
                 break;
 
             case 'h1' :
@@ -213,7 +232,7 @@ class MediasferaNewsParser
             case 'img' :
                 static::$post->itemImage = [
                     $node->attr('alt') ?? $node->attr('title') ?? null,
-                    static::getNodeImage('src', $node)
+                    static::getNodeImage(static::ATTR_IMAGE, $node)
                 ];
                 break;
 
@@ -221,7 +240,7 @@ class MediasferaNewsParser
                 if($node->filter('img')->count()) {
                     static::$post->itemImage = [
                         $node->filter('img')->attr('alt') ?? $node->filter('img')->attr('title') ?? null,
-                        static::getNodeImage('src', $node->filter('img'))
+                        static::getNodeImage(static::ATTR_IMAGE, $node->filter('img'))
                     ];
                 }
                 break;
@@ -230,7 +249,7 @@ class MediasferaNewsParser
                 if($node->filter('img')->count() == 1) {
                     static::$post->itemImage = [
                         $node->text() ?? $node->filter('img')->attr('alt') ?? $node->filter('img')->attr('title') ?? null,
-                        static::getNodeImage('src', $node->filter('img'))
+                        static::getNodeImage(static::ATTR_IMAGE, $node->filter('img'))
                     ];
                 }
                 else {
@@ -241,41 +260,40 @@ class MediasferaNewsParser
             case 'a' :
                 if($node->filter('img')->count() == 1) {
                     static::$post->itemImage = [
-                        $node->attr('alt') ?? $node->attr('title') ?? null ?? $node->text(),
-                        static::getNodeImage('src', $node->filter('img')),
+                        $node->attr('alt') ?? $node->attr('title') ?? $node->text() ?? null,
+                        static::getNodeImage(static::ATTR_IMAGE, $node->filter('img')),
                     ];
                 }
                 else {
-                    static::$post->itemLink = [
-                        $node->text() ?? $node->attr('href'),
-                        static::getNodeLink('href', $node)
-                    ];
+                    $videoID = static::getNodeVideoId($node->attr('href'));
+
+                    if($videoID) {
+                        static::$post->itemVideo = $videoID;
+                    }
+                    else {
+                        static::$post->itemLink = [
+                            $node->text() ?? $node->attr('href'),
+                            static::getNodeLink('href', $node)
+                        ];
+                    }
                 }
                 break;
 
             case 'iframe' :
+                static::$post->itemVideo = static::getNodeVideoId($node->attr(static::ATTR_VIDEO_IFRAME));
+                break;
             case 'video' :
-                static::$post->itemVideo = static::getNodeVideoId($node);
+                if($node->filter('source')->count()) {
+                    static::$post->itemVideo = static::getNodeVideoId($node->filter('source')->first()->attr('src'));
+                }
+                else {
+                    static::$post->itemVideo = static::getNodeVideoId($node->attr('src'));
+                }
                 break;
 
             case 'blockquote' :
             case 'q' :
-                static::$post->itemQuote = $node->text();
-                break;
-
-            case 'div' :
-            case 'article' :
-            case 'figcaption' :
-            case 'span' :
-            case 'strong' :
-            case 'p' :
-            case 'b' :
-                $nodes = $node->children();
-                if ($nodes->count()) {
-                    static::parseSection($node);
-                } else {
-                    static::$post->itemText = $node->text();
-                }
+                static::parseQuote($node);
                 break;
 
             case 'ul' :
@@ -283,14 +301,12 @@ class MediasferaNewsParser
                 static::parseList($node);
                 break;
             default :
-                $nodes = $node->children();
-                if ($nodes->count()) {
-                    static::parseSection($node);
-                } else {
-                    static::$post->itemText = $node->text();
-                }
-                if(static::isDebug()) {
-                    trigger_error('Unknown tag ' . $nodeName, E_USER_NOTICE);
+                static::parseSection($node);
+                if(static::DEBUG) {
+                    echo '<div style="background-color: orange; color: white;text-align: center">
+                            Unknown tag: "' . $nodeName . '" ' .
+                            'Post: ' . static::$post->original .
+                        '</div>';
                 }
         }
     }
@@ -301,6 +317,7 @@ class MediasferaNewsParser
         $html = $node->html();
 
         $allow_tags = [
+            'div',
             'br',
             'a',
             'img',
@@ -319,7 +336,7 @@ class MediasferaNewsParser
             'em',
         ];
 
-        if(in_array($node->nodeName(), $tags)) {
+        if (in_array($node->nodeName(), $tags)) {
             $html = strip_tags($html, $allow_tags);
         }
 
@@ -344,12 +361,55 @@ class MediasferaNewsParser
     }
 
 
+    protected static function parseQuote(Crawler $node) : void
+    {
+        $result = [];
+
+        $html = $node->html();
+
+        $allow_tags = [
+            'br',
+            'em',
+            'p',
+        ];
+
+        $html = strip_tags($html, $allow_tags);
+
+        $_html = '<body><div>' . $html . '</div></body>';
+
+        $node = new Crawler($_html);
+
+        $node->children('body > div > *')->reduce(function (Crawler $node) use (&$html, &$result) {
+
+            $nodeHtml = $node->outerHtml();
+
+            $chunks = explode($nodeHtml, $html, 2);
+
+            $result[] = trim(strip_tags(array_shift($chunks)));
+            $result[] = trim(strip_tags($node->text()));
+
+            $html = array_shift($chunks);
+        });
+
+        $result[] = trim(strip_tags($html));
+
+        $result = array_filter($result);
+
+        static::$post->itemQuote = implode(PHP_EOL, $result);
+    }
+
+
     protected static function parseList(Crawler $node) : void
     {
         if(!$node->text()) {
             static::parseSection($node);
             return;
-        } else if($node->filter('img')->count()) {
+        }
+        else if($node->filter('img')->count()) {
+            static::parseSection($node);
+            return;
+        }
+        else if($node->filter('li')->count() == $node->filter('li a')->count() && $node->filter('li')->text() == $node->filter('li a')->text()) {
             static::parseSection($node);
             return;
         }
@@ -428,11 +488,16 @@ class MediasferaNewsParser
         }
 
         if ($dateTime) {
-            $dateTime->setTimezone(new DateTimeZone('UTC'));
-            return $dateTime->format('Y-m-d H:i:s');
+            if(static::IS_CURRENT_TIME) {
+                return $dateTime->format('Y-m-d') . date(' H:i:s');
+            }
+            else {
+                $dateTime->setTimezone(new DateTimeZone('UTC'));
+                return $dateTime->format('Y-m-d H:i:s');
+            }
         }
 
-        return '';
+        throw new \Exception('Wrong date format! Format: "' . static::DATEFORMAT . '" Date string: "' . $date . '"', E_USER_ERROR);
     }
 
 
@@ -475,21 +540,27 @@ class MediasferaNewsParser
     }
 
 
-    public static function getNodeVideoId(Crawler $node) : ?string
+    public static function getImageFromCSS(string $css, string $selector) : ?string
     {
-        switch ($node->nodeName())
-        {
-            case 'iframe' :
-                $src = $node->attr('src');
-                break;
-            case 'video' :
-                $src = $node->filter('source')->first()->attr('src');
-                break;
-            default :
-                $src = null;
-                break;
+        if(!$css || !$selector) {
+            return '';
         }
 
+        $pattern = '/'.str_replace('.', '\.', $selector).'\s*\{\s*(background-image|background)\s*:\s*url\((?\'img\'[^)]*)\)[^}]*/m';
+
+        preg_match_all($pattern, $css, $matches);
+
+        if(count($matches['img'])) {
+            $src = trim(end($matches['img']), ' \'"');
+            return static::resolveUrl($src);
+        }
+
+        return '';
+    }
+
+
+    public static function getNodeVideoId(?string $src) : ?string
+    {
         if(!$src) {
             return '';
         }
@@ -516,6 +587,10 @@ class MediasferaNewsParser
 
             $parts = parse_url($url);
 
+            if(!$parts) {
+                return '';
+            }
+
             if(isset($parts['host'])) {
                 if(strpos($parts['host'], '%') !== false) {
                     $parts['host'] = urldecode($parts['host']);
@@ -525,19 +600,7 @@ class MediasferaNewsParser
             }
 
             $url = static::buildUrl($parts);
-
-
         }
-
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
-            $url = urlencode($url);
-        }
-
-        if (static::isDebug() && !filter_var($url, FILTER_VALIDATE_URL)) {
-            trigger_error('Incorrect URL:' . $url, E_USER_NOTICE);
-        }
-
-        $url = str_replace(['%3A', '%2F', '%3F'], [':', '/', '?'], $url);
 
         return $url;
     }
@@ -563,19 +626,28 @@ class MediasferaNewsParser
     }
 
 
-    public static function getPage($url)
+    public static function getPage(string $url, ?int $try_count = null) : ?string
     {
+        if($try_count === null) {
+            $try_count = static::PAGE_TRY_COUNT;
+        }
+
         $curl = Helper::getCurl();
-        $curl->setOption(CURLOPT_HEADER, true);
-        $curl->setOption(CURLOPT_RETURNTRANSFER, true);
-        $curl->setOption(CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
+
+        $curl->setOptions(static::CURL_OPTIONS);
 
         $content = $curl->get($url);
 
         $code = $curl->responseCode ?? null;
 
         if (empty($content) || $code < 200 || $code >= 400) {
-            throw new \Exception('Can\'t open url ' . $curl->getUrl());
+            if($try_count > 0) {
+                usleep(rand(static::PAGE_TRY_INTERVAL[0] * 1000000, static::PAGE_TRY_INTERVAL[1] * 1000000));
+                return static::getPage($url, ($try_count - 1));
+            }
+            else {
+                throw new \Exception('Can\'t open url ' . $curl->getUrl());
+            }
         }
 
         return $content;

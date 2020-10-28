@@ -153,4 +153,18 @@ class NewsPostItemDTO
     {
         return $this->getType() === NewsPostItem::TYPE_VIDEO;
     }
+
+    public function getHash(): string
+    {
+        $data = [
+            $this->type,
+            trim($this->text, " /\t\n\r\0\x0B"),
+            trim($this->image, " /\t\n\r\0\x0B"),
+            trim($this->link, " /\t\n\r\0\x0B"),
+            $this->headerLevel,
+            $this->youtubeId,
+        ];
+
+        return md5(implode('', $data));
+    }
 }

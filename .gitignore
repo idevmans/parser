@@ -32,3 +32,7 @@ tests/_support/_generated
 #vagrant folder
 /.vagrant
 composer.lock
+
+#for testing CORE
+commands/ParserCoreDebugController.php
+components/core/
