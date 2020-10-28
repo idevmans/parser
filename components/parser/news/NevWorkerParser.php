@@ -79,16 +79,23 @@ class NevWorkerParser extends AbstractBaseParser
         $newsPageCrawler = new Crawler($newsPage);
         $newsPostCrawler = $newsPageCrawler->filterXPath('//div[contains(@class,"b-news-detail-body js-news-detail")]');
 
-        $mainImageCrawler = $newsPageCrawler->filterXPath('//div[@class="b-news-detail-body__picture"]')->first();
+        $this->removeDomNodes($newsPostCrawler,'//*[contains(@class,"instagram-media")]');
+        $this->removeDomNodes($newsPostCrawler,'//*[contains(@class,"instagram-media instagram-media-rendered")]');
+        $this->removeDomNodes($newsPostCrawler,'//*[@id="instagram-embed-0"]');
+
+        $mainImageCrawler = $newsPostCrawler->filterXPath('//img[1]');
         if ($this->crawlerHasNodes($mainImageCrawler)) {
             $image = $mainImageCrawler->attr('src');
+            $this->removeDomNodes($newsPostCrawler,'//img[1]');
         }
         if ($image !== null && $image !== '') {
             $image = UriResolver::resolve($image, $uri);
             $previewNewsDTO->setImage($this->encodeUri($image));
         }
         $previewNewsDTO->setDescription(null);
+
         $contentCrawler = $newsPostCrawler;
+
         $this->removeDomNodes($contentCrawler,'//div[@class="google-auto-placed ap_container"]');
 
         $this->purifyNewsPostContent($contentCrawler);
