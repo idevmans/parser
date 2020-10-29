@@ -16,6 +16,7 @@ use SplObjectStorage;
 use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\DomCrawler\UriResolver;
 use Throwable;
+use yii\web\NotFoundHttpException;
 
 abstract class AbstractBaseParser implements ParserInterface
 {
@@ -49,7 +50,11 @@ abstract class AbstractBaseParser implements ParserInterface
 
         /** @var PreviewNewsDTO $newsPostDTO */
         foreach ($previewList as $key => $newsPostDTO) {
-            $newsList[] = $this->parseNewsPage($newsPostDTO);
+            try {
+                $newsList[] = $this->parseNewsPage($newsPostDTO);
+            } catch (NotFoundHttpException $exception) {
+                continue;
+            }
             $this->getNodeStorage()->removeAll($this->getNodeStorage());
 
             if ($key % $this->getPageCountBetweenDelay() === 0) {
@@ -576,6 +581,10 @@ abstract class AbstractBaseParser implements ParserInterface
 
         $httpCode = $responseInfo['http_code'] ?? null;
         $uri = $responseInfo['url'] ?? null;
+
+        if ($httpCode === 404) {
+            throw new NotFoundHttpException("Страница {$uri} не найдена");
+        }
 
         if ($httpCode < 200 || $httpCode >= 400) {
             throw new RuntimeException("Не удалось скачать страницу {$uri}, код ответа {$httpCode}");
