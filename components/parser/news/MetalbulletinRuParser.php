@@ -61,6 +61,7 @@ class MetalbulletinRuParser extends AbstractBaseParser
                 $publishedAt = new DateTimeImmutable();
                 $publishedAt = $publishedAt->setTime($h, $m, 0);
                 $publishedAt = $publishedAt->setTimezone(new DateTimeZone('Europe/Moscow'));
+                $publishedAt = $publishedAt->setTimezone(new DateTimeZone('UTC'));
 
                 $previewList[] = new PreviewNewsDTO($uri, $publishedAt, $title);
             });
