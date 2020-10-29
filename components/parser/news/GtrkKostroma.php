@@ -52,9 +52,12 @@ class GtrkKostroma extends AbstractBaseParser
 
                 $publishedAtString = $newsPreview->filterXPath('//span[@class="news__date"]')->text();
                 $publishedAtString = explode(' ', $publishedAtString);
-                dd($publishedAtString);
-                $publishedAtString[1] = $this->convertStringMonthToNumber($publishedAtString[1]);
-                $publishedAtString = $publishedAtString[0].' '.$publishedAtString[1].' '.$publishedAtString[2].' '.$publishedAtString[3];
+                if ($publishedAtString[1] === 'часа' || $publishedAtString[1] === 'назад') {
+                    $publishedAtString = date('d m Y, H:i');
+                } else {
+                    $publishedAtString[1] = $this->convertStringMonthToNumber($publishedAtString[1]);
+                    $publishedAtString = $publishedAtString[0].' '.$publishedAtString[1].' '.$publishedAtString[2].' '.$publishedAtString[3];
+                }
                 $timezone = new DateTimeZone('Europe/Moscow');
                 $publishedAt = DateTimeImmutable::createFromFormat('d m Y, H:i', $publishedAtString, $timezone);
                 $publishedAtUTC = $publishedAt->setTimezone(new DateTimeZone('UTC'));
@@ -64,7 +67,6 @@ class GtrkKostroma extends AbstractBaseParser
         }
 
         $previewNewsDTOList = array_slice($previewNewsDTOList, 0, $maxNewsCount);
-        dd($previewNewsDTOList);
         return $previewNewsDTOList;
     }
 
@@ -90,7 +92,8 @@ class GtrkKostroma extends AbstractBaseParser
 
         $previewNewsDTO->setDescription(null);
 
-        $contentCrawler = $newsPostCrawler->filterXPath('//div[@class="detail__text"]')->first();
+        $contentCrawler = $newsPostCrawler->filterXPath('//div[contains(@class,"inner-content inner-content--min-height")]');
+
         $this->removeDomNodes($contentCrawler,'//div[contains(@class,"tag-list-simple")]');
 
         $this->purifyNewsPostContent($contentCrawler);
