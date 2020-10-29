@@ -22,11 +22,11 @@ class NewsPostItemDTO
         ?int $headerLevel = null,
         ?string $youtubeId = null
     ) {
-        if ($link && ($link === '' || !filter_var($link, FILTER_VALIDATE_URL))) {
+        if ($link && ($link === '')) {
             throw new InvalidArgumentException('Невалидный аргумент $link: ' . $link);
         }
 
-        if ($image && ($image === '' || !filter_var($image, FILTER_VALIDATE_URL))) {
+        if ($image && ($image === '')) {
             throw new InvalidArgumentException('Невалидный аргумент $image: ' . $image);
         }
 
@@ -152,5 +152,19 @@ class NewsPostItemDTO
     public function isVideo(): bool
     {
         return $this->getType() === NewsPostItem::TYPE_VIDEO;
+    }
+
+    public function getHash(): string
+    {
+        $data = [
+            $this->type,
+            trim($this->text, " /\t\n\r\0\x0B"),
+            trim($this->image, " /\t\n\r\0\x0B"),
+            trim($this->link, " /\t\n\r\0\x0B"),
+            $this->headerLevel,
+            $this->youtubeId,
+        ];
+
+        return md5(implode('', $data));
     }
 }

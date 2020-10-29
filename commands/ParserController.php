@@ -24,6 +24,4 @@ class ParserController extends Controller
         echo "Post count: " . count($posts) . PHP_EOL;
         Helper::printPosts($posts);
     }
-
-
 }

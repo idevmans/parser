@@ -17,13 +17,18 @@ use Yii;
  */
 trait Cacheable
 {
-    public static function request(string $url)
+    public static function request(string $url, $options = [])
     {
         $cacheKey = md5(__METHOD__.$url);
         $cache    = Yii::$app->parserCache ?? null;
 
         if (!$cache || false === ($data = $cache->get($cacheKey))) {
             $curl = Helper::getCurl();
+
+            if ($options) {
+                $curl->setOptions($options);
+            }
+
             $data = $curl->get($url);
 
             if ($cache) {

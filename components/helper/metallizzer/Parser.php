@@ -11,15 +11,25 @@ class Parser
 
     protected $selectors = [
         'header' => ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+        'link'   => ['a'],
         'image'  => ['img'],
         'quote'  => ['blockquote'],
-        'link'   => ['a'],
         'video'  => ['iframe'],
     ];
 
     protected $glued     = [];
     protected $callbacks = [];
     protected $subNode   = './*/node()';
+    protected $ignore    = [
+        'script',
+        'noscript',
+        'style',
+        'video',
+        'embed',
+        'form',
+        'table',
+    ];
+    protected $joinText = true;
 
     public static function flatten(array $blocks)
     {
@@ -32,6 +42,28 @@ class Parser
         }
 
         return array_filter($result);
+    }
+
+    public function addIgnore($selector, $merge = true)
+    {
+        if (!is_array($selector)) {
+            $selector = [$selector];
+        }
+
+        if ($merge) {
+            $this->ignore = array_merge($this->ignore, $selector);
+        } else {
+            $this->ignore = $selector;
+        }
+
+        return $this;
+    }
+
+    public function setJoinText($joinText)
+    {
+        $this->joinText = (bool) $joinText;
+
+        return $this;
     }
 
     public function setDeep(int $deep)
@@ -59,6 +91,22 @@ class Parser
 
     public function parse(Crawler $node, int $i)
     {
+        if (count($this->ignore)) {
+            foreach ($this->ignore as $selector) {
+                if ($node->matches($selector)) {
+                    return [];
+                }
+            }
+
+            $node->filterXPath('//'.implode('|//', $this->ignore))->each(function (Crawler $crawler) {
+                $domNode = $crawler->getNode(0);
+
+                if ($domNode && $domNode->parentNode) {
+                    $domNode->parentNode->removeChild($domNode);
+                }
+            });
+        }
+
         $this->glued = array_map(function ($v) {
             return implode(',', $v);
         }, $this->selectors);
@@ -71,19 +119,19 @@ class Parser
             $method = 'parse'.ucfirst($type);
 
             if (false !== $item = $this->{$method}($node, $i)) {
-                return [$item];
+                return $this->filterItems([$item]);
             }
         }
 
         if ($items = $this->parseSubnodes($node, $i)) {
-            return $items;
+            return $this->filterItems($items);
         }
 
         $text = $node->nodeName() == 'br'
             ? PHP_EOL
             : Text::normalizeWhitespace($node->text(null, false));
 
-        return array_filter([$this->textNode($text)]);
+        return $this->filterItems([$this->textNode($text)]);
     }
 
     public function addCallback(string $type, callable $callback)
@@ -110,6 +158,30 @@ class Parser
         return $this;
     }
 
+    protected function filterItems(array $items)
+    {
+        return array_filter($items, function ($item) {
+            if (empty($item['type'])) {
+                return false;
+            }
+
+            switch ($item['type']) {
+                case NewsPostItem::TYPE_HEADER:
+                case NewsPostItem::TYPE_TEXT:
+                case NewsPostItem::TYPE_QUOTE:
+                    return strlen(Text::trim($item['text'])) > 0;
+
+                case NewsPostItem::TYPE_IMAGE:
+                    return !empty($item['image']);
+
+                case NewsPostItem::TYPE_VIDEO:
+                    return !empty($item['youtubeId']);
+            }
+
+            return false;
+        });
+    }
+
     protected function parseSubnodes(Crawler $node, int $i)
     {
         $items = array_filter($node->filterXpath($this->subNode)->each(function ($node, $i) {
@@ -128,6 +200,10 @@ class Parser
             return $this->textNode($text);
         }));
 
+        if (!$this->joinText) {
+            return $items;
+        }
+
         $lastItem = false;
         $lastKey  = null;
 
@@ -136,7 +212,13 @@ class Parser
                 && NewsPostItem::TYPE_TEXT == $item['type']
                 && $item['type'] == $lastItem['type']
             ) {
-                $items[$lastKey]['text'] .= $item['text'];
+                $space = '';
+
+                if (!preg_match('/^[[:punct:]]/', $item['text'])) {
+                    $space = ' ';
+                }
+
+                $items[$lastKey]['text'] .= $space.$item['text'];
 
                 unset($items[$key]);
 
@@ -255,11 +337,6 @@ class Parser
             return false;
         }
 
-        // Если внутри ссылки содержится изображение, возвращаем его
-        if ($this->isNodeContains($node, 'image')) {
-            return $this->parseImage($node, $i);
-        }
-
         $type  = NewsPostItem::TYPE_LINK;
         $link  = $node->filter($this->glued['link'])->first();
         $image = null;
@@ -271,6 +348,15 @@ class Parser
             list($image, $url) = [$url, $image];
 
             $type = NewsPostItem::TYPE_IMAGE;
+        } elseif ($this->isNodeContains($node, 'image')) {
+            // Если внутри ссылки содержится изображение, возвращаем его
+
+            return $this->parseImage($node, $i);
+        }
+
+        if (!preg_match('/^(?:(?:(?<proto>https?|ftp):)?\/)?\//i', $link->attr('href'))) {
+            return $this->textNode($text ?: $link->attr('href'));
+
         }
 
         return [

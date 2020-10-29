@@ -91,7 +91,7 @@ class NewsPost
         if (!$this->original || !filter_var($this->original, FILTER_VALIDATE_URL))
             throw new Exception("Invalid post original({$this->original}): {$this->parser}");
 
-        if ($this->image && !filter_var($this->image, FILTER_VALIDATE_URL))
+        if ($this->image && $this->image == '')
             throw new Exception("Invalid post image({$this->image}): {$this->parser}");
 
         foreach ($this->items as $item)

@@ -21,4 +21,13 @@ class Text
 
         return preg_replace('/[\pZ\pC]{1,}/u', ' ', self::trim($value));
     }
+
+    public static function decode(string $string)
+    {
+        if (0 !== mb_strpos($string, "\x1f\x8b\x08")) {
+            return $string;
+        }
+
+        return gzdecode($string);
+    }
 }

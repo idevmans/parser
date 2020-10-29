@@ -94,16 +94,16 @@ class NewsPostItem
                     throw new Exception("Invalid postItem header level: $parser");
                 break;
             case self::TYPE_LINK:
-                if (!$this->link || $this->link == '' || !filter_var($this->link, FILTER_VALIDATE_URL))
+                if (!$this->link || $this->link == '')
                     throw new Exception("Invalid postItem link: $parser");
                 break;
             case self::TYPE_IMAGE:
-                if (!$this->image || $this->image == '' || !filter_var($this->image, FILTER_VALIDATE_URL))
+                if (!$this->image || $this->image == '')
                     throw new Exception("Invalid postItem image: $parser");
                 break;
             case self::TYPE_VIDEO:
                 if (!$this->youtubeId || (strlen($this->youtubeId) != 11))
-                    throw new Exception("Invalid postItem image: $parser");
+                    throw new Exception("Invalid postItem video: $parser");
         }
     }
 }
