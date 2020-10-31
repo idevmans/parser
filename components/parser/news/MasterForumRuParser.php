@@ -1,0 +1,121 @@
+<?php
+
+namespace app\components\parser\news;
+
+use app\components\helper\nai4rus\AbstractBaseParser;
+use app\components\helper\nai4rus\PreviewNewsDTO;
+use app\components\parser\NewsPost;
+use DateTimeImmutable;
+use DateTimeZone;
+use DOMNode;
+use RuntimeException;
+use Symfony\Component\DomCrawler\Crawler;
+use Symfony\Component\DomCrawler\UriResolver;
+use Throwable;
+
+class MasterForumRuParser extends AbstractBaseParser
+{
+    public const USER_ID = 2;
+    public const FEED_ID = 2;
+
+    protected function getSiteUrl(): string
+    {
+        return 'https://master-forum.ru';
+    }
+
+    protected function isFormattingTag(DOMNode $node): bool
+    {
+        $formattingTags = [
+            'strong' => true,
+            'b' => true,
+            'span' => true,
+            's' => true,
+            'i' => true,
+            'a' => true,
+            'em' => true,
+            'sup' => true
+        ];
+
+        return isset($formattingTags[$node->nodeName]);
+    }
+
+    protected function getPreviewNewsDTOList(int $minNewsCount = 10, int $maxNewsCount = 100): array
+    {
+        $previewList = [];
+        $url = "/feed";
+        $uriPreviewPage = UriResolver::resolve($url, $this->getSiteUrl());
+
+        try {
+            $previewNewsContent = $this->getPageContent($uriPreviewPage);
+            $previewNewsCrawler = new Crawler($previewNewsContent);
+        } catch (Throwable $exception) {
+            throw new RuntimeException('Не удалось получить достаточное кол-во новостей', null, $exception);
+        }
+
+        $previewNewsCrawler = $previewNewsCrawler->filterXPath('//item');
+        if ($previewNewsCrawler->count() < $minNewsCount) {
+            throw new RuntimeException('Не удалось получить достаточное кол-во новостей');
+        }
+
+        $previewNewsCrawler->each(function (Crawler $newsPreview) use (&$previewList, $url) {
+            $title = $newsPreview->filterXPath('//title')->text();
+            $uri = $newsPreview->filterXPath('//link')->text();
+            $publishedAtString = $newsPreview->filterXPath('//pubDate')->text();
+            $preview = null;
+
+            $publishedAt = DateTimeImmutable::createFromFormat('D, d M Y H:i:s O', $publishedAtString);
+            $publishedAtUTC = $publishedAt->setTimezone(new DateTimeZone('UTC'));
+
+            $previewList[] = new PreviewNewsDTO($uri, $publishedAtUTC, $title, $preview);
+        });
+
+        if (count($previewList) < $minNewsCount) {
+            throw new RuntimeException('Не удалось получить достаточное кол-во новостей');
+        }
+
+        $previewList = array_slice($previewList, 0, $maxNewsCount);
+
+        return $previewList;
+    }
+
+    protected function parseNewsPage(PreviewNewsDTO $previewNewsItem): NewsPost
+    {
+        $uri = $previewNewsItem->getUri();
+
+        $newsPage = $this->getPageContent($uri);
+
+        $newsPageCrawler = new Crawler($newsPage);
+        $newsPostCrawler = $newsPageCrawler->filterXPath('//*[@id="contPrint"]');
+
+        $image = null;
+        $mainImageCrawler = $newsPageCrawler->filterXPath('//meta[@property="og:image"]')->first();
+        if ($this->crawlerHasNodes($mainImageCrawler)) {
+            $image = $mainImageCrawler->attr('content');
+        }
+        if ($image !== null && $image !== '') {
+            $previewNewsItem->setImage(UriResolver::resolve($image, $uri));
+        }
+
+        // $descriptionCrawler = $newsPostCrawler->filterXPath('//*[@class="news-detail__teaser"]');
+        // if ($this->crawlerHasNodes($descriptionCrawler) && $descriptionCrawler->text() !== '') {
+        //     $previewNewsItem->setDescription($descriptionCrawler->text());
+        // }
+
+        $contentCrawler = $newsPostCrawler->filterXPath('//div[@class="content_page_text"]');
+
+        $this->removeDomNodes($contentCrawler, '//*[contains(translate(substring(text(), 0, 14), "ФОТО", "фото"), "фото")]
+        | //*[@id="__utl-buttons-1"]
+        | //*[following-sibling::p[@style]][last()]/following-sibling::*
+        | //p[1]//a
+        | //p[1]//img
+        | //p[descendant::text()[contains(., "ющая статья")]]
+        | //blockquote[descendant::text()[contains(., "ЧИТАЙТЕ ТАКЖЕ")]]
+        | //ul[descendant::strong][descendant::a]');
+
+        $this->purifyNewsPostContent($contentCrawler);
+
+        $newsPostItemDTOList = $this->parseNewsPostContent($contentCrawler, $previewNewsItem);
+
+        return $this->factoryNewsPost($previewNewsItem, $newsPostItemDTOList);
+    }
+}
