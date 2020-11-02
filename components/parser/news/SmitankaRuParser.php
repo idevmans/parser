@@ -18,38 +18,33 @@ use Symfony\Component\DomCrawler\Crawler;
 
 
 /**
- * @fullhtml
+ * @rss_html
  */
 class SmitankaRuParser extends MediasferaNewsParser implements ParserInterface
 {
     public const USER_ID = 2;
     public const FEED_ID = 2;
 
-    public const NEWS_LIMIT = 2;
+    public const NEWS_LIMIT = 100;
 
     public const SITE_URL = 'https://smitanka.ru';
     public const NEWSLIST_URL = 'https://smitanka.ru/bitrix/rss.php';
 
-    public const DATEFORMAT = 'Y-m-d\TH:i:sP';
+    public const DATEFORMAT = 'D, d M Y H:i:s O';
 
-    public const NEWSLIST_POST = '.content-column .listing article.type-post';
-    public const NEWSLIST_TITLE = '.title';
-    public const NEWSLIST_LINK = '.title a';
-    public const NEWSLIST_DATE = '.time .post-published';
-    public const NEWSLIST_IMAGE = '.img-holder';
+    public const NEWSLIST_POST = '//rss/channel/item';
+    public const NEWSLIST_TITLE = '//title';
+    public const NEWSLIST_LINK = '//link';
+    public const NEWSLIST_DATE = '//pubDate';
+    public const NEWSLIST_IMAGE = '//enclosure';
 
-    public const ARTICLE_DESC = '.post .entry-content p:first-of-type';
-    public const ARTICLE_TEXT =  '.post .entry-content';
+    public const ARTICLE_TEXT = '.article_one .article_text';
 
     public const ARTICLE_BREAKPOINTS = [
-        'id' => [
-            'toc_container' => false,
-        ],
         'class' => [
-            'bs-irp' => false,
-        ],
-        'text' => [
-            'Источник' => false,
+            'article-list-img' => false,
+            'article-tags-list' => true,
+            'share-block' => true,
         ],
     ];
 
@@ -63,22 +58,20 @@ class SmitankaRuParser extends MediasferaNewsParser implements ParserInterface
 
         $listCrawler = new Crawler($listContent);
 
-        $listCrawler->filter(self::NEWSLIST_POST)->slice(0, self::NEWS_LIMIT)->each(function (Crawler $node) use (&$posts) {
+        $listCrawler->filterXPath(self::NEWSLIST_POST)->slice(0, self::NEWS_LIMIT)->each(function (Crawler $node) use (&$posts) {
 
             self::$post = new NewsPostWrapper();
 
             self::$post->title = self::getNodeData('text', $node, self::NEWSLIST_TITLE);
-            self::$post->original = self::getNodeLink('href', $node, self::NEWSLIST_LINK);
-            self::$post->createDate = self::getNodeDate('datetime', $node, self::NEWSLIST_DATE);
-            self::$post->image = self::getNodeImage('data-src', $node, self::NEWSLIST_IMAGE);
+            self::$post->original = str_ireplace('http://', 'https://', self::getNodeLink('text', $node, self::NEWSLIST_LINK));
+            self::$post->createDate = self::getNodeDate('text', $node, self::NEWSLIST_DATE);
+            self::$post->image = self::getNodeImage('url', $node, self::NEWSLIST_IMAGE);
 
             $articleContent = self::getPage(self::$post->original);
 
             if (!empty($articleContent)) {
 
                 $articleCrawler = new Crawler($articleContent);
-
-                self::$post->description = self::getNodeData('text', $articleCrawler, self::ARTICLE_DESC);
 
                 self::parse($articleCrawler->filter(self::ARTICLE_TEXT));
 
