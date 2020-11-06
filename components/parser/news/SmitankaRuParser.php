@@ -18,7 +18,7 @@ use Symfony\Component\DomCrawler\Crawler;
 
 
 /**
- * @rss_html
+ * @fullhtml
  */
 class SmitankaRuParser extends MediasferaNewsParser implements ParserInterface
 {
@@ -28,23 +28,31 @@ class SmitankaRuParser extends MediasferaNewsParser implements ParserInterface
     public const NEWS_LIMIT = 100;
 
     public const SITE_URL = 'https://smitanka.ru';
-    public const NEWSLIST_URL = 'https://smitanka.ru/bitrix/rss.php';
+    public const NEWSLIST_URL = 'https://smitanka.ru';
 
-    public const DATEFORMAT = 'D, d M Y H:i:s O';
+    public const TIMEZONE = '+0300';
+    public const DATEFORMAT = 'd.m.Y H:i:s';
 
-    public const NEWSLIST_POST = '//rss/channel/item';
-    public const NEWSLIST_TITLE = '//title';
-    public const NEWSLIST_LINK = '//link';
-    public const NEWSLIST_DATE = '//pubDate';
-    public const NEWSLIST_IMAGE = '//enclosure';
+    public const NEWSLIST_POST = '#product-board .news.product';
+    public const NEWSLIST_TITLE = '.title';
+    public const NEWSLIST_LINK = '.title a';
 
-    public const ARTICLE_TEXT = '.article_one .article_text';
+    public const ARTICLE_DATE =  '.product-main .content';
+    public const ARTICLE_DESC =  '.product-main .content .lead';
+    public const ARTICLE_IMAGE = '.product-main .content .img-responsive';
+    public const ARTICLE_TEXT =  '.product-main .content';
 
     public const ARTICLE_BREAKPOINTS = [
         'class' => [
-            'article-list-img' => false,
-            'article-tags-list' => true,
-            'share-block' => true,
+            'img-responsive' => false,
+            'Favorites' => false,
+            'lead' => false,
+            'LikeDislike' => false,
+            'like_block' => false,
+            'ajax_banner_in' => false,
+            'Count' => true,
+            'onl_socialButtons' => true,
+            'onl_login' => true,
         ],
     ];
 
@@ -58,20 +66,23 @@ class SmitankaRuParser extends MediasferaNewsParser implements ParserInterface
 
         $listCrawler = new Crawler($listContent);
 
-        $listCrawler->filterXPath(self::NEWSLIST_POST)->slice(0, self::NEWS_LIMIT)->each(function (Crawler $node) use (&$posts) {
+        $listCrawler->filter(self::NEWSLIST_POST)->slice(0, self::NEWS_LIMIT)->each(function (Crawler $node) use (&$posts) {
 
             self::$post = new NewsPostWrapper();
 
             self::$post->title = self::getNodeData('text', $node, self::NEWSLIST_TITLE);
-            self::$post->original = str_ireplace('http://', 'https://', self::getNodeLink('text', $node, self::NEWSLIST_LINK));
-            self::$post->createDate = self::getNodeDate('text', $node, self::NEWSLIST_DATE);
-            self::$post->image = self::getNodeImage('url', $node, self::NEWSLIST_IMAGE);
+            self::$post->original = self::getNodeLink('href', $node, self::NEWSLIST_LINK);
 
             $articleContent = self::getPage(self::$post->original);
 
             if (!empty($articleContent)) {
 
                 $articleCrawler = new Crawler($articleContent);
+
+                self::$post->description = self::getNodeData('text', $articleCrawler, self::ARTICLE_DESC);
+
+                self::$post->createDate = self::getNodeDate('data-start', $articleCrawler, self::ARTICLE_DATE);
+                self::$post->image = self::getNodeImage('url', $articleCrawler, self::ARTICLE_IMAGE);
 
                 self::parse($articleCrawler->filter(self::ARTICLE_TEXT));
 
