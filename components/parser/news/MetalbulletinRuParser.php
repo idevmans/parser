@@ -58,10 +58,8 @@ class MetalbulletinRuParser extends AbstractBaseParser
                 $time = Text::trim($newsPreview->filterXPath('//td[1]')->text());
                 [$h, $m] = explode(':', $time);
 
-                $publishedAt = new DateTimeImmutable();
+                $publishedAt = new DateTimeImmutable('now', new DateTimeZone('Europe/Moscow'));
                 $publishedAt = $publishedAt->setTime($h, $m, 0);
-                $publishedAt = $publishedAt->setTimezone(new DateTimeZone('Europe/Moscow'));
-                $publishedAt = $publishedAt->setTimezone(new DateTimeZone('UTC'));
 
                 $previewList[] = new PreviewNewsDTO($uri, $publishedAt, $title);
             });
