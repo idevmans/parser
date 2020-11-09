@@ -83,9 +83,9 @@ class NevWorkerParser extends AbstractBaseParser
         $this->removeDomNodes($newsPostCrawler,'//*[contains(@class,"instagram-media instagram-media-rendered")]');
         $this->removeDomNodes($newsPostCrawler,'//*[@id="instagram-embed-0"]');
 
-        $mainImageCrawler = $newsPostCrawler->filterXPath('//img[1]');
+        $mainImageCrawler = $newsPageCrawler->filterXPath('//meta[@property="og:image"]');
         if ($this->crawlerHasNodes($mainImageCrawler)) {
-            $image = $mainImageCrawler->attr('src');
+            $image = $mainImageCrawler->attr('content');
             $this->removeDomNodes($newsPostCrawler,'//img[1]');
         }
         if ($image !== null && $image !== '') {
