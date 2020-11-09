@@ -318,7 +318,7 @@ class NewsPostWrapper
             }
 
             $tmp = explode('.', $item->text);
-            $addDot = !$this->isEmptyText(end($tmp));
+            $addDot = $this->isEmptyText(end($tmp));
 
             foreach ($tmp as $k => $chunk) {
                 $letters += strlen($chunk) + 1;
@@ -343,8 +343,6 @@ class NewsPostWrapper
                 else {
                     $this->items[$key]->text = $itemText;
                 }
-
-                break;
             }
 
             if($letters > 200) {

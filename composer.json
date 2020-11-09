@@ -15,6 +15,7 @@
     "league/uri": "^6.3",
     "rowbot/punycode": "^1.0",
     "symfony/css-selector": "^5.1",
+    "ext-curl": "*",
     "ext-zlib": "*",
     "ext-json": "*",
     "fingli/parser-core": "dev-main"
