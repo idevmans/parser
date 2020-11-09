@@ -15,7 +15,7 @@ use app\components\parser\NewsPost;
 use app\components\parser\NewsPostItem;
 
 /**
- * @version 1.0
+ * @version 1.1.4
  *
  * @property string $title NewsPost->title
  * @property string $description NewsPost->description
@@ -49,7 +49,9 @@ class NewsPostWrapper
 
     private array $items = [];
 
-    public string $check_empty_chars = " \t\n\r\0\x0B\xC2\xA0";
+    public string $check_empty_chars = " !,.:;?\t\n\r\0\x0B\xC2\xA0";
+
+    public bool $isPrepareItems = true;
 
     public function __construct()
     {
@@ -65,11 +67,14 @@ class NewsPostWrapper
         switch ($name)
         {
             case 'title' :
-            case 'description' :
             case 'createDate' :
             case 'original' :
             case 'image' :
-                $this->$name = $value ?? '';
+                $this->$name = $this->prepareString($value) ?? '';
+                break;
+
+            case 'description' :
+                $this->description = $this->isEmptyText($value) ? '' : $this->prepareString($value);
                 break;
 
             case 'item' :
@@ -138,31 +143,44 @@ class NewsPostWrapper
 
     private function addItemHeader(?array $value) : void
     {
-        if(!$value || count($value) != 2 || !$value[0] || !$value[1]) {
+        if(!$value || count($value) != 2) {
             return;
         }
 
-        $check = trim(strip_tags($value[0]), $this->check_empty_chars);
+        $text = $this->prepareString($value[0]);
+        $level = (int)$value[1];
 
-        if(!$check) {
+        if($this->isEmptyText($text)) {
+            return;
+        }
+
+        if($level < 1 || $level > 6) {
+            return;
+        }
+
+        if($text == $this->title) {
+            return;
+        }
+
+        if($text == $this->description) {
             return;
         }
 
         $this->items[] = new NewsPostItem(
             NewsPostItem::TYPE_HEADER,
-            $value[0],
+            $text,
             null,
             null,
-            $value[1],
+            $level
         );
     }
 
 
     private function addItemText(?string $value) : void
     {
-        $check = trim(strip_tags($value), $this->check_empty_chars);
+        $value = $this->prepareString($value);
 
-        if(!$check) {
+        if($this->isEmptyText($value)) {
             return;
         }
 
@@ -179,21 +197,28 @@ class NewsPostWrapper
             return;
         }
 
-        $value[0] = $value[0] ?? null;
+        $image = $this->prepareString($value[1]);
+
+        if(!$image || $image == $this->image) {
+            return;
+        }
+
+        $text = $this->prepareString($value[0]) ?? null;
+        $text = (pathinfo($text, PATHINFO_EXTENSION) == pathinfo($image, PATHINFO_EXTENSION)) ? null : $text;
 
         $this->items[] = new NewsPostItem(
             NewsPostItem::TYPE_IMAGE,
-            $value[0],
-            $value[1]
+            $text,
+            $image
         );
     }
 
 
     private function addItemQuote(?string $value) : void
     {
-        $check = trim(strip_tags($value), $this->check_empty_chars);
+        $value = $this->prepareString($value);
 
-        if(!$check) {
+        if($this->isEmptyText($value)) {
             return;
         }
 
@@ -206,21 +231,39 @@ class NewsPostWrapper
 
     private function addItemLink(?array $value) : void
     {
-        if(!$value || count($value) != 2 || !$value[0] || !$value[1]) {
+        if(!$value || count($value) != 2) {
             return;
         }
 
+        $link = $this->prepareString($value[1]);
+        $text = $this->prepareString($value[0]);
+
+        if(!$link) {
+            if($text) {
+                $this->items[] = new NewsPostItem(
+                    NewsPostItem::TYPE_TEXT,
+                    $text
+                );
+            }
+
+            return;
+        }
+
+        $text = $text ?? $link;
+
         $this->items[] = new NewsPostItem(
             NewsPostItem::TYPE_LINK,
-            $value[0],
+            $text,
             null,
-            $value[1]
+            $link
         );
     }
 
 
     private function addItemVideo(?string $value) : void
     {
+        $value = $this->prepareString($value);
+
         if(!$value) {
             return;
         }
@@ -236,15 +279,127 @@ class NewsPostWrapper
     }
 
 
+    private function prepareString(?string $string) : string
+    {
+        if(!$string) {
+            return '';
+        }
+
+        return trim(strip_tags($string));
+    }
+
+
+    private function isEmptyText(?string $value) : bool
+    {
+        $value = trim(strip_tags(html_entity_decode($value)), $this->check_empty_chars);
+
+        if($value) {
+            return false;
+        }
+
+        return true;
+    }
+
+
+    private function setDescription() : void
+    {
+        if($this->description) {
+            return;
+        }
+
+        $description = [];
+        $letters = 0;
+        $addDot = true;
+
+        foreach ($this->items as $key => $item) {
+
+            if($item->type == NewsPostItem::TYPE_IMAGE || $item->type == NewsPostItem::TYPE_VIDEO) {
+                continue;
+            }
+
+            $tmp = explode('.', $item->text);
+            $addDot = !$this->isEmptyText(end($tmp));
+
+            foreach ($tmp as $k => $chunk) {
+                $letters += strlen($chunk) + 1;
+                $description[] = trim($chunk);
+                unset($tmp[$k]);
+
+                if($letters > 200) {
+                    break;
+                }
+            }
+
+            if(!sizeof($tmp)) {
+                $addDot = false;
+            }
+
+            if($item->type == NewsPostItem::TYPE_TEXT) {
+                $itemText = implode('.', $tmp);
+
+                if($this->isEmptyText($itemText)) {
+                    unset($this->items[$key]);
+                }
+                else {
+                    $this->items[$key]->text = $itemText;
+                }
+
+                break;
+            }
+
+            if($letters > 200) {
+                break;
+            }
+        }
+
+        if(sizeof($description)) {
+            $this->description = trim(implode('. ', $description), '.') . ($addDot ? '.' : '');
+        }
+        else {
+            $this->description = $this->title;
+        }
+    }
+
+
+    private function prepareItems() : void
+    {
+        if(!($this->description && $this->isPrepareItems)) {
+            return;
+        }
+
+        $description = $this->description;
+
+        foreach ($this->items as $key => $item) {
+            if(!$item->text) {
+                continue;
+            }
+
+            if(strpos($description, $item->text) !== 0) {
+                continue;
+            }
+
+            $description = trim(
+                substr_replace($description, '', 0, strlen($item->text))
+            );
+
+            if($item->type == NewsPostItem::TYPE_TEXT || $item->type == NewsPostItem::TYPE_HEADER ) {
+                unset($this->items[$key]);
+            }
+
+            if(!$description) {
+                return;
+            }
+        }
+    }
+
+
     public function getNewsPost() : NewsPost
     {
-        foreach ($this->items as $item) {
-            if(!$this->description && $item->type == NewsPostItem::TYPE_TEXT) {
-                $this->description = $item->text;
-            }
-            if(!$this->image && $item->type == NewsPostItem::TYPE_IMAGE) {
-                $this->image = $item->image;
-            }
+        if($this->description) {
+            $this->prepareItems();
+        }
+        else {
+            $this->setDescription();
         }
 
         $post = new NewsPost(
