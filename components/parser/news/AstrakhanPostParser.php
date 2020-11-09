@@ -68,10 +68,11 @@ class AstrakhanPostParser extends AbstractBaseParser
         $newsPageCrawler = new Crawler($newsPage);
         $newsPostCrawler = $newsPageCrawler->filterXPath('//div[@class="b-news-article"]//div[@class="js-mediator-article"]');
 
-        $mainImageCrawler = $newsPageCrawler->filterXPath('//meta[@property="og:image"]')->first();
+        $mainImageCrawler = $newsPageCrawler->filterXPath('//div[@class="azar-news-slider-item-img"]')->first();
         if ($this->crawlerHasNodes($mainImageCrawler)) {
-            $image = $mainImageCrawler->attr('content');
-            $this->removeDomNodes($newsPostCrawler,'//img[1]');
+            $image = $mainImageCrawler->attr('style');
+            preg_match_all('~\bbackground(-image)?\s*:(.*?)\(\s*(\'|")?(?<image>.*?)\3?\s*\)~i',$image,$matches);
+            $image = $matches['image'][0];
         }
         if ($image !== null && $image !== '') {
             $image = UriResolver::resolve($image, $uri);
